@@ -19,7 +19,7 @@ struct depthImg
     int width;
     float *depth;
     vector<float> pose; // 4 * 4
-};  // not used yet
+};                      // not used yet
 
 // 从TSDF计算保存点云
 void SaveVoxelGrid2SurfacePointCloud(const string &file_name, int voxel_grid_dim_x, int voxel_grid_dim_y, int voxel_grid_dim_z,
@@ -31,7 +31,7 @@ void SaveVoxelGrid2SurfacePointCloud(const string &file_name, int voxel_grid_dim
     for (int i = 0; i < voxel_grid_dim_x * voxel_grid_dim_y * voxel_grid_dim_z; i++)
         if (abs(voxel_grid_TSDF[i]) < tsdf_thresh && voxel_grid_weight[i] > weight_thres)
             num_pts++;
-    cout << num_pts << endl;
+    cout << num_pts << " Points in tsdf.ply" << endl;
     FILE *fp = fopen(file_name.c_str(), "w");
     fprintf(fp, "ply\n");
     fprintf(fp, "format binary_little_endian 1.0\n");
@@ -76,6 +76,64 @@ vector<float> LoadMatrixFromFile(string filename, int M, int N)
     return matrix;
 }
 
+static void MatrixFromYawPitchRoll(float yaw, float pitch, float roll, std::vector<float>& p_vecMatrix)
+{   
+    float obc_pi = M_PI;
+    float factor = 1.0;
+    float cosY = cos(yaw * obc_pi / 180.0 * factor);     // Yaw
+    float sinY = sin(yaw * obc_pi / 180.0 * factor);
+
+    float cosP = cos(pitch * obc_pi / 180.0 * factor);     // Pitch
+    float sinP = sin(pitch * obc_pi / 180.0 * factor);
+
+    float cosR = cos(roll * obc_pi / 180.0* factor );     // Roll
+    float sinR = sin(roll * obc_pi / 180.0* factor);
+
+    printf("%.2f %.2f %.2f %.2f %.2f %.2f\n", cosY, sinY, cosP, sinP, cosR, sinR);
+
+    float f32Mat11 = cosY * cosR + sinY * sinP * sinR;
+    p_vecMatrix.push_back(f32Mat11);
+    float f32Mat21 = cosR * sinY * sinP - sinR * cosY;
+    p_vecMatrix.push_back(f32Mat21);
+    float f32Mat31 = cosP * sinY;
+    p_vecMatrix.push_back(f32Mat31);
+    p_vecMatrix.push_back(0);
+
+    // printf("%.2f %.2f %.2f\n", f32Mat11, f32Mat21, f32Mat31);
+
+    float f32Mat12 = cosP * sinR;
+    p_vecMatrix.push_back(f32Mat12);
+    float f32Mat22 = cosR * cosP;
+    p_vecMatrix.push_back(f32Mat22);
+    float f32Mat32 = -sinP;
+    p_vecMatrix.push_back(f32Mat32);
+    p_vecMatrix.push_back(0);
+
+    // printf("%.2f %.2f %.2f\n", f32Mat12, f32Mat22, f32Mat32);
+
+    float f32Mat13 = sinR * cosY * sinP - sinY * cosR;
+    p_vecMatrix.push_back(f32Mat13);
+    float f32Mat23 = sinY * sinR + cosR * cosY * sinP;
+    p_vecMatrix.push_back(f32Mat23);
+    float f32Mat33 = cosP * cosY;
+    p_vecMatrix.push_back(f32Mat33);
+    p_vecMatrix.push_back(0);
+
+    // printf("%.2f %.2f %.2f\n", f32Mat13, f32Mat23, f32Mat33);
+
+    p_vecMatrix.push_back(0);
+    p_vecMatrix.push_back(0);
+    p_vecMatrix.push_back(0);
+    p_vecMatrix.push_back(1);
+
+    // printf("%.2f %.2f %.2f %.2f\n", p_vecMatrix[0], p_vecMatrix[1], p_vecMatrix[2], p_vecMatrix[3]);
+    // printf("%.2f %.2f %.2f %.2f\n", p_vecMatrix[4], p_vecMatrix[5], p_vecMatrix[6], p_vecMatrix[7]);
+    // printf("%.2f %.2f %.2f %.2f\n", p_vecMatrix[8], p_vecMatrix[9], p_vecMatrix[10], p_vecMatrix[11]);
+    // printf("%.2f %.2f %.2f %.2f\n", p_vecMatrix[12], p_vecMatrix[13], p_vecMatrix[14], p_vecMatrix[15]);
+
+    return;
+}
+
 void ReadDepth(string filename, int H, int W, float *depth)
 {
     cv::Mat depth_mat = cv::imread(filename, cv::IMREAD_UNCHANGED);
@@ -116,11 +174,12 @@ void WriteDepthBin(string filename, int H, int W, float *depth)
     outfile.close();
 }
 
-
-void ReadDepthBin(string filename, int H, int W, float *depth)
+void ReadDepthBin(string filename, int H, int W, unsigned short *depth)
 {
     ifstream infile;
     infile.open(filename);
+    // cout << filename << " ";
+    unsigned short buff;
     if (!infile.is_open())
     {
         cerr << "Failed open infile:" << filename << endl;
@@ -130,9 +189,13 @@ void ReadDepthBin(string filename, int H, int W, float *depth)
     {
         for (int c = 0; c < W; ++c)
         {
-            infile >> depth[r * W + c];
+            // infile >> depth[r * W + c];
+            infile.read(reinterpret_cast<char *>(&buff), sizeof(buff));
+            depth[r * W + c] = int(buff);
+            // cout << depth[r * W + c] << " ";
         }
     }
+
     infile.close();
 }
 
