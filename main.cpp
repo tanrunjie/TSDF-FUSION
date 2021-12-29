@@ -69,7 +69,7 @@ int main(int argc, char *argv[])
     string data_path = "/home/tan/projects/mapping/data/tmp";
     int base_frame_idx = 0;
     int first_frame_idx = 0;
-    float num_frames = 24;
+    float num_frames = 36;
 
     float cam_K[3 * 3];
     float base2world[4 * 4];
@@ -80,7 +80,7 @@ int main(int argc, char *argv[])
     unsigned short depth_im[im_height * im_width];
 
     // TSDF起始点
-    int factor = 2;
+    int factor = 1;
     float voxel_grid_origin_x = -5.0f ; // location of voxel grid origin in base frame camera coor
     float voxel_grid_origin_y = -5.0f ;
     float voxel_grid_origin_z = -5.0f ;
