@@ -1,5 +1,8 @@
 #include <iostream>
+#include <chrono>
 #include "utils.hpp"
+
+using namespace chrono;
 
 //  integrate a TSDF voxel volumn with given depth images
 void Integrate(float *cam_K, float *cam2base, unsigned short *depth_im,
@@ -8,7 +11,7 @@ void Integrate(float *cam_K, float *cam2base, unsigned short *depth_im,
                float voxel_grid_origin_x, float voxel_grid_origin_y, float voxel_grid_origin_z,
                float voxel_size, float trunc_margin, float *voxel_grid_TSDF, float *voxel_grid_weight)
 {
-    
+
     for (int pt_grid_x = 0; pt_grid_x < voxel_grid_dim_x; ++pt_grid_x)
     {
         for (int pt_grid_y = 0; pt_grid_y < voxel_grid_dim_y; ++pt_grid_y)
@@ -39,9 +42,8 @@ void Integrate(float *cam_K, float *cam2base, unsigned short *depth_im,
                 if (pt_pix_x < 0 || pt_pix_x >= im_width || pt_pix_y < 0 || pt_pix_y >= im_height)
                     continue;
 
-                float depth_val = float(depth_im[pt_pix_y * im_width + pt_pix_x])/1000.0;
+                float depth_val = float(depth_im[pt_pix_y * im_width + pt_pix_x]) / 1000.0;
                 // cout << depth_val << " ";
-
 
                 float diff = depth_val - pt_cam_z; // Signed Distance Func
 
@@ -67,6 +69,9 @@ int main(int argc, char *argv[])
 {
     string cam_K_file = "/home/tan/projects/mapping/data/camera-intrinsics.txt";
     string data_path = "/home/tan/projects/mapping/data/tmp";
+
+    // string cam_K_file = "/userdata/camera-intrinsics.txt";
+    // string data_path = "/userdata/tmp";
     int base_frame_idx = 0;
     int first_frame_idx = 0;
     float num_frames = 36;
@@ -75,21 +80,22 @@ int main(int argc, char *argv[])
     float base2world[4 * 4];
     float cam2base[4 * 4];
     float cam2world[4 * 4];
+
     int im_width = 480;
     int im_height = 640;
     unsigned short depth_im[im_height * im_width];
 
     // TSDF起始点
-    int factor = 1;
-    float voxel_grid_origin_x = -5.0f ; // location of voxel grid origin in base frame camera coor
-    float voxel_grid_origin_y = -5.0f ;
-    float voxel_grid_origin_z = -5.0f ;
+    float factor = 2.5;                // 1x 分辨率， 立方关系
+    float voxel_grid_origin_x = -5.0f; // location of voxel grid origin in base frame camera coor
+    float voxel_grid_origin_y = -2.0f;
+    float voxel_grid_origin_z = -4.5f;
     // TSDF voxel num 10e6
-    int voxel_grid_dim_x = 100 * factor;
-    int voxel_grid_dim_y = 100 * factor;
-    int voxel_grid_dim_z = 100 * factor;
-    float voxel_size = 0.1f/factor; // voxel resolution
-    float trunc_margin = voxel_size * 5;
+    int voxel_grid_dim_x = int(100 * factor);
+    int voxel_grid_dim_y = int(40 * factor);
+    int voxel_grid_dim_z = int(90 * factor);
+    float voxel_size = 0.1f / factor;    // voxel resolution
+    float trunc_margin = voxel_size * 4; //
 
     // Read camera intrinsics
     vector<float> cam_K_vec = LoadMatrixFromFile(cam_K_file, 3, 3);
@@ -120,6 +126,7 @@ int main(int argc, char *argv[])
     float yaw = 0;
     for (int frame_idx = first_frame_idx; frame_idx < first_frame_idx + (int)num_frames; frame_idx++)
     {
+        auto start = system_clock::now();
         ostringstream curr_frame_prefix;
         curr_frame_prefix << setw(4) << setfill('0') << frame_idx;
         // Read current frame depth
@@ -131,18 +138,17 @@ int main(int argc, char *argv[])
 
         ReadDepthBin(depth_im_file1, im_height, im_width, depth_im);
         cout << "Fusing: " << depth_im_file1 << endl;
-       
+
         // read pose
         string cam2world_file = data_path + "/" + curr_frame_prefix.str() + ".txt";
         vector<float> cam2world_vec = LoadMatrixFromFile(cam2world_file, 4, 4);
         // vector<float> cam2world_vec;
         // MatrixFromYawPitchRoll(yaw+frame_idx*10.0, 0.0, 0.0, cam2world_vec);
-        
+
         copy(cam2world_vec.begin(), cam2world_vec.end(), cam2world);
 
         // camera coor to world coor
         multiply_matrix(base2world_inv, cam2world, cam2base);
-
 
         // Incremental Integrate
         Integrate(cam_K, cam2base, depth_im,
@@ -150,13 +156,17 @@ int main(int argc, char *argv[])
                   voxel_grid_dim_x, voxel_grid_dim_y, voxel_grid_dim_z,
                   voxel_grid_origin_x, voxel_grid_origin_y, voxel_grid_origin_z,
                   voxel_size, trunc_margin, voxel_grid_TSDF, voxel_grid_weight);
+
+        auto end = system_clock::now();
+        auto duration = duration_cast<microseconds>(end - start);
+        cout << "spend " << double(duration.count()) * microseconds::period::num / microseconds::period::den << " second" << endl;
     }
 
     cout << "Saving surface point cloud (tsdf.ply)..." << endl;
 
     SaveVoxelGrid2SurfacePointCloud("tsdf.ply", voxel_grid_dim_x, voxel_grid_dim_y, voxel_grid_dim_z,
                                     voxel_size, voxel_grid_origin_x, voxel_grid_origin_y, voxel_grid_origin_z,
-                                    voxel_grid_TSDF, voxel_grid_weight, 0.2f, 0.0f);
+                                    voxel_grid_TSDF, voxel_grid_weight, 0.25, 2.0f); // 后两超参： 到隐势面的距离阈值（-1,1), 看到voxel的次数; 即(-0.4,0.4),3次
 
     return 0;
 }

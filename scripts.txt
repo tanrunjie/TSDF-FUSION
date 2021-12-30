@@ -1,0 +1,5 @@
+交叉编译：
+/home/tan/fan/rv1126_linux_210924/prebuilts/gcc/linux-x86/arm/gcc-arm-8.3-2019.03-x86_64-arm-linux-gnueabihf/bin/arm-linux-gnueabihf-g++ main.cpp  -O3 -o test
+
+推到板子：
+adb push file /userdata/

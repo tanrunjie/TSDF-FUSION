@@ -5,12 +5,12 @@
 #include <string>
 #include <math.h>
 #include <string>
-#include <opencv4/opencv2/core/core.hpp>
-#include <opencv4/opencv2/highgui/highgui.hpp>
-#include <opencv4/opencv2/imgproc/imgproc.hpp>
+// #include <opencv4/opencv2/core/core.hpp>
+// #include <opencv4/opencv2/highgui/highgui.hpp>
+// #include <opencv4/opencv2/imgproc/imgproc.hpp>
 
 using namespace std;
-using namespace cv;
+// using namespace cv;
 
 struct depthImg
 {
@@ -29,7 +29,7 @@ void SaveVoxelGrid2SurfacePointCloud(const string &file_name, int voxel_grid_dim
     // count
     int num_pts = 0;
     for (int i = 0; i < voxel_grid_dim_x * voxel_grid_dim_y * voxel_grid_dim_z; i++)
-        if (abs(voxel_grid_TSDF[i]) < tsdf_thresh && voxel_grid_weight[i] > weight_thres)
+        if (abs(voxel_grid_TSDF[i]) <= tsdf_thresh && voxel_grid_weight[i] >= weight_thres)
             num_pts++;
     cout << num_pts << " Points in tsdf.ply" << endl;
     FILE *fp = fopen(file_name.c_str(), "w");
@@ -39,11 +39,14 @@ void SaveVoxelGrid2SurfacePointCloud(const string &file_name, int voxel_grid_dim
     fprintf(fp, "property float x\n");
     fprintf(fp, "property float y\n");
     fprintf(fp, "property float z\n");
+    fprintf(fp, "property uint8 red\n");
+    fprintf(fp, "property uint8 green\n");
+    fprintf(fp, "property uint8 blue\n");
     fprintf(fp, "end_header\n");
 
     for (int i = 0; i < voxel_grid_dim_x * voxel_grid_dim_y * voxel_grid_dim_z; i++)
     {
-        if (abs(voxel_grid_TSDF[i]) < tsdf_thresh && voxel_grid_weight[i] > weight_thres)
+        if (abs(voxel_grid_TSDF[i]) <= tsdf_thresh && voxel_grid_weight[i] >= weight_thres)
         {
             int z = floor(i / (voxel_grid_dim_x * voxel_grid_dim_y));
             int y = floor((i - (z * voxel_grid_dim_x * voxel_grid_dim_y)) / voxel_grid_dim_x);
@@ -54,9 +57,13 @@ void SaveVoxelGrid2SurfacePointCloud(const string &file_name, int voxel_grid_dim
             float pt_base_y = voxel_grid_origin_y + (float)y * voxel_size;
             float pt_base_z = voxel_grid_origin_z + (float)z * voxel_size;
 
+            uint8_t color = 96;
             fwrite(&pt_base_x, sizeof(float), 1, fp);
             fwrite(&pt_base_y, sizeof(float), 1, fp);
             fwrite(&pt_base_z, sizeof(float), 1, fp);
+            fwrite(&color, sizeof(uint8_t), 1, fp);
+            fwrite(&color, sizeof(uint8_t), 1, fp);
+            fwrite(&color, sizeof(uint8_t), 1, fp);
         }
     }
     fclose(fp);
@@ -76,80 +83,71 @@ vector<float> LoadMatrixFromFile(string filename, int M, int N)
     return matrix;
 }
 
-static void MatrixFromYawPitchRoll(float yaw, float pitch, float roll, std::vector<float>& p_vecMatrix)
-{   
+static void MatrixFromYawPitchRoll(float yaw, float pitch, float roll, std::vector<float> &p_vecMatrix)
+{
     float obc_pi = M_PI;
     float factor = 1.0;
-    float cosY = cos(yaw * obc_pi / 180.0 * factor);     // Yaw
+    float cosY = cos(yaw * obc_pi / 180.0 * factor); // Yaw
     float sinY = sin(yaw * obc_pi / 180.0 * factor);
 
-    float cosP = cos(pitch * obc_pi / 180.0 * factor);     // Pitch
+    float cosP = cos(pitch * obc_pi / 180.0 * factor); // Pitch
     float sinP = sin(pitch * obc_pi / 180.0 * factor);
 
-    float cosR = cos(roll * obc_pi / 180.0* factor );     // Roll
-    float sinR = sin(roll * obc_pi / 180.0* factor);
+    float cosR = cos(roll * obc_pi / 180.0 * factor); // Roll
+    float sinR = sin(roll * obc_pi / 180.0 * factor);
 
     printf("%.2f %.2f %.2f %.2f %.2f %.2f\n", cosY, sinY, cosP, sinP, cosR, sinR);
 
-    float f32Mat11 = cosY * cosR + sinY * sinP * sinR;
+    float f32Mat22 = cosY * cosR + sinY * sinP * sinR;
+    float f32Mat23 = cosR * sinY * sinP - sinR * cosY;
+    float f32Mat21 = cosP * sinY;
+    float f32Mat32 = cosP * sinR;
+    float f32Mat33 = cosR * cosP;
+    float f32Mat31 = -sinP;
+    float f32Mat12 = sinR * cosY * sinP - sinY * cosR;
+
+    float f32Mat13 = sinY * sinR + cosR * cosY * sinP;
+    float f32Mat11 = cosP * cosY;
+
     p_vecMatrix.push_back(f32Mat11);
-    float f32Mat21 = cosR * sinY * sinP - sinR * cosY;
-    p_vecMatrix.push_back(f32Mat21);
-    float f32Mat31 = cosP * sinY;
-    p_vecMatrix.push_back(f32Mat31);
-    p_vecMatrix.push_back(0);
-
-    // printf("%.2f %.2f %.2f\n", f32Mat11, f32Mat21, f32Mat31);
-
-    float f32Mat12 = cosP * sinR;
     p_vecMatrix.push_back(f32Mat12);
-    float f32Mat22 = cosR * cosP;
-    p_vecMatrix.push_back(f32Mat22);
-    float f32Mat32 = -sinP;
-    p_vecMatrix.push_back(f32Mat32);
-    p_vecMatrix.push_back(0);
-
-    // printf("%.2f %.2f %.2f\n", f32Mat12, f32Mat22, f32Mat32);
-
-    float f32Mat13 = sinR * cosY * sinP - sinY * cosR;
     p_vecMatrix.push_back(f32Mat13);
-    float f32Mat23 = sinY * sinR + cosR * cosY * sinP;
-    p_vecMatrix.push_back(f32Mat23);
-    float f32Mat33 = cosP * cosY;
-    p_vecMatrix.push_back(f32Mat33);
-    p_vecMatrix.push_back(0);
+    p_vecMatrix.push_back(0.0);
 
-    // printf("%.2f %.2f %.2f\n", f32Mat13, f32Mat23, f32Mat33);
+    p_vecMatrix.push_back(f32Mat21);
+    p_vecMatrix.push_back(f32Mat22);
+    p_vecMatrix.push_back(f32Mat23);
+    p_vecMatrix.push_back(0.0);
+
+    p_vecMatrix.push_back(f32Mat31);
+    p_vecMatrix.push_back(f32Mat32);
+    p_vecMatrix.push_back(f32Mat33);
+    p_vecMatrix.push_back(0.0);
 
     p_vecMatrix.push_back(0);
     p_vecMatrix.push_back(0);
     p_vecMatrix.push_back(0);
     p_vecMatrix.push_back(1);
 
-    // printf("%.2f %.2f %.2f %.2f\n", p_vecMatrix[0], p_vecMatrix[1], p_vecMatrix[2], p_vecMatrix[3]);
-    // printf("%.2f %.2f %.2f %.2f\n", p_vecMatrix[4], p_vecMatrix[5], p_vecMatrix[6], p_vecMatrix[7]);
-    // printf("%.2f %.2f %.2f %.2f\n", p_vecMatrix[8], p_vecMatrix[9], p_vecMatrix[10], p_vecMatrix[11]);
-    // printf("%.2f %.2f %.2f %.2f\n", p_vecMatrix[12], p_vecMatrix[13], p_vecMatrix[14], p_vecMatrix[15]);
-
     return;
 }
 
-void ReadDepth(string filename, int H, int W, float *depth)
-{
-    cv::Mat depth_mat = cv::imread(filename, cv::IMREAD_UNCHANGED);
-    if (depth_mat.empty())
-    {
-        cout << "Error: depth image file not read!" << endl;
-    }
-    for (int r = 0; r < H; ++r)
-        for (int c = 0; c < W; ++c)
-        {
-            depth[r * W + c] = (float)(depth_mat.at<unsigned short>(r, c)) / 1000.0f;
-            // 0～10米有效值
-            if (depth[r * W + c] > 10.0f)
-                depth[r * W + c] = 0;
-        }
-}
+// void ReadDepth(string filename, int H, int W, float *depth)
+// {
+//     cv::Mat depth_mat = cv::imread(filename, cv::IMREAD_UNCHANGED);
+//     if (depth_mat.empty())
+//     {
+//         cout << "Error: depth image file not read!" << endl;
+//     }
+//     for (int r = 0; r < H; ++r)
+//         for (int c = 0; c < W; ++c)
+//         {
+//             depth[r * W + c] = (float)(depth_mat.at<unsigned short>(r, c)) / 1000.0f;
+//             // 0～10米有效值
+//             if (depth[r * W + c] > 10.0f)
+//                 depth[r * W + c] = 0;
+//         }
+// }
 
 void WriteDepthBin(string filename, int H, int W, float *depth)
 {
